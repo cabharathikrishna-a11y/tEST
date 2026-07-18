@@ -165,36 +165,73 @@ fun LiveSphereScreen(
         com.example.api.TimelineSyncEngine.formatTimeMsToHhMmSs(myTodayFocusMs)
     }
 
-    val allParticipantsSorted = remember(filteredPeerUiCards, myTodayFocusMs, myEmail, myDisplayName, userEmoji) {
-        val list = mutableListOf<TodayRankModel>()
+    val allParticipantsSorted = remember(filteredPeerUiCards, myTodayFocusMs, myEmail, myDisplayName, userEmoji, leaderboard, historyRecords) {
+        data class TodayRankWithXpModel(
+            val email: String,
+            val displayName: String,
+            val todayFocusMs: Long,
+            val isMe: Boolean,
+            val customEmoji: String,
+            val xp: Int
+        )
+
+        val list = mutableListOf<TodayRankWithXpModel>()
         
-        // Add me
+        // 1. Add me with dynamic XP
+        val myLocalStreak = com.example.api.AnalyticsVaultEngine.calculateDailyConsistencyStreak(context, historyRecords)
+        val myLeaderboardPeer = leaderboard.find { it.isMe || it.email.lowercase().trim() == myEmail.lowercase().trim() }
+        val myStreak = if (myLocalStreak > 0) myLocalStreak else (myLeaderboardPeer?.activeStreak ?: 0)
+        val myXp = com.example.api.ArenaLeaderboardEngine.calculateXp(myTodayFocusMs, myStreak)
+        
         list.add(
-            TodayRankModel(
+            TodayRankWithXpModel(
                 email = myEmail,
                 displayName = myDisplayName,
                 todayFocusMs = myTodayFocusMs,
                 isMe = true,
-                customEmoji = userEmoji ?: "👤"
+                customEmoji = userEmoji ?: "👤",
+                xp = myXp
             )
         )
         
-        // Add other unique peers
+        // 2. Add other unique peers with dynamic XP
         filteredPeerUiCards.forEach { card ->
+            val peerEmail = card.peerState.userId
+            val matchedPeer = leaderboard.find {
+                val email1Norm = it.email.lowercase().replace(".", "").replace("_", "").trim()
+                val email2Norm = peerEmail.lowercase().replace(".", "").replace("_", "").trim()
+                email1Norm == email2Norm
+            }
+            val peerStreak = matchedPeer?.activeStreak ?: 0
+            val peerXp = com.example.api.ArenaLeaderboardEngine.calculateXp(card.rawElapsedMs, peerStreak)
+            
             list.add(
-                TodayRankModel(
-                    email = card.peerState.userId,
+                TodayRankWithXpModel(
+                    email = peerEmail,
                     displayName = card.peerState.displayName,
                     todayFocusMs = card.rawElapsedMs,
                     isMe = false,
-                    customEmoji = card.peerState.customEmoji ?: "👤"
+                    customEmoji = card.peerState.customEmoji ?: "👤",
+                    xp = peerXp
                 )
             )
         }
         
-        // Sort descending by todayFocusMs
-        list.distinctBy { it.email.lowercase().replace(".", "").replace("_", "").trim() }
-            .sortedByDescending { it.todayFocusMs }
+        val sorted = list.distinctBy { it.email.lowercase().replace(".", "").replace("_", "").trim() }
+            .sortedWith(
+                compareByDescending<TodayRankWithXpModel> { it.todayFocusMs }
+                    .thenByDescending { it.xp }
+            )
+            
+        sorted.map {
+            TodayRankModel(
+                email = it.email,
+                displayName = it.displayName,
+                todayFocusMs = it.todayFocusMs,
+                isMe = it.isMe,
+                customEmoji = it.customEmoji
+            )
+        }
     }
 
     val myRank = remember(allParticipantsSorted) {
@@ -312,9 +349,9 @@ fun LiveSphereScreen(
                 letterSpacing = 1.sp,
                 modifier = Modifier.padding(bottom = 6.dp)
             )
-            val myStreak = remember(historyRecords, leaderboard) {
+            val myStreak = remember(historyRecords, leaderboard, myEmail) {
                 val myLocalStreak = com.example.api.AnalyticsVaultEngine.calculateDailyConsistencyStreak(context, historyRecords)
-                val myLeaderboardPeer = leaderboard.find { it.isMe }
+                val myLeaderboardPeer = leaderboard.find { it.isMe || it.email.lowercase().trim() == myEmail.lowercase().trim() }
                 if (myLocalStreak > 0) myLocalStreak else (myLeaderboardPeer?.activeStreak ?: 0)
             }
             val myXp = remember(myTodayFocusMs, myStreak) {
@@ -402,8 +439,8 @@ fun LiveSphereScreen(
                             val email2Norm = cardModel.peerState.userId.lowercase().replace(".", "").replace("_", "").trim()
                             email1Norm == email2Norm
                         }
-                        val peerXp = matchedPeer?.xpScore ?: 0
                         val peerStreak = matchedPeer?.activeStreak ?: 0
+                        val peerXp = com.example.api.ArenaLeaderboardEngine.calculateXp(cardModel.rawElapsedMs, peerStreak)
                         PeerStatusCard(
                             cardModel = cardModel,
                             viewModel = viewModel,
@@ -723,13 +760,15 @@ fun PeerStatusCard(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.Top
         ) {
-            val resolvedEmoji = if (viewModel.firestoreAvatars.containsKey(peer.userId)) {
-                viewModel.firestoreAvatars[peer.userId] ?: peer.customEmoji
-            } else {
-                LaunchedEffect(peer.userId) {
-                    viewModel.fetchUserAvatarFromFirestore(peer.userId)
+            val resolvedEmoji = when {
+                !viewModel.firestoreAvatars[peer.userId].isNullOrEmpty() -> viewModel.firestoreAvatars[peer.userId]
+                !peer.customEmoji.isNullOrEmpty() -> peer.customEmoji
+                else -> {
+                    LaunchedEffect(peer.userId) {
+                        viewModel.fetchUserAvatarFromFirestore(peer.userId)
+                    }
+                    peer.customEmoji
                 }
-                peer.customEmoji
             }
 
             UserAvatar(

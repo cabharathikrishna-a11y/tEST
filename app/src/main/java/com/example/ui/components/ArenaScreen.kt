@@ -1566,13 +1566,15 @@ fun ArenaPodium(
                         }
 
                         // Initials Avatar
-                        val resolvedEmoji = if (viewModel.firestoreAvatars.containsKey(peer.email)) {
-                            viewModel.firestoreAvatars[peer.email] ?: peer.customEmoji
-                        } else {
-                            LaunchedEffect(peer.email) {
-                                viewModel.fetchUserAvatarFromFirestore(peer.email)
+                        val resolvedEmoji = when {
+                            !viewModel.firestoreAvatars[peer.email].isNullOrEmpty() -> viewModel.firestoreAvatars[peer.email]
+                            !peer.customEmoji.isNullOrEmpty() -> peer.customEmoji
+                            else -> {
+                                LaunchedEffect(peer.email) {
+                                    viewModel.fetchUserAvatarFromFirestore(peer.email)
+                                }
+                                peer.customEmoji
                             }
-                            peer.customEmoji
                         }
                         val avatarSize = if (rank == 1) 46.dp else if (rank == 2) 40.dp else 36.dp
                         val avatarFontSize = if (rank == 1) 14.sp else if (rank == 2) 12.sp else 11.sp
@@ -1743,13 +1745,15 @@ fun LeaderboardRow(
                     modifier = Modifier.width(24.dp)
                 )
 
-                val resolvedEmoji = if (viewModel.firestoreAvatars.containsKey(peer.email)) {
-                    viewModel.firestoreAvatars[peer.email] ?: peer.customEmoji
-                } else {
-                    LaunchedEffect(peer.email) {
-                        viewModel.fetchUserAvatarFromFirestore(peer.email)
+                val resolvedEmoji = when {
+                    !viewModel.firestoreAvatars[peer.email].isNullOrEmpty() -> viewModel.firestoreAvatars[peer.email]
+                    !peer.customEmoji.isNullOrEmpty() -> peer.customEmoji
+                    else -> {
+                        LaunchedEffect(peer.email) {
+                            viewModel.fetchUserAvatarFromFirestore(peer.email)
+                        }
+                        peer.customEmoji
                     }
-                    peer.customEmoji
                 }
                 UserAvatar(
                     emojiOrBase64 = resolvedEmoji,
