@@ -29,6 +29,7 @@ import androidx.compose.animation.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -253,8 +254,8 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     // Main screen controller
     when (screenState) {
         ContactScreen.LIST -> {
-            Box(modifier = modifier.fillMaxSize()) {
-                if (selectedContact == null) {
+            val isTablet = LocalConfiguration.current.screenWidthDp >= 600
+            val contactListUI = @Composable {
                     val sortedFilteredContacts = remember(contacts, selectedFolder) {
                         val base = if (selectedFolder == "All") {
                             contacts
@@ -555,9 +556,10 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             }
                         }
                     }
-                } else {
+            }
+
+            val contactDetailsUI = @Composable { contact: Contact ->
                     // Show Contact Details View (Redesigned as separate Full-Screen View)
-                    val contact = selectedContact!!
                     Card(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1014,6 +1016,65 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             ) {
                                                 Icon(Icons.Default.Close, contentDescription = "Delete Attachment", tint = Color.Red, modifier = Modifier.size(14.dp))
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+            }
+
+            Box(modifier = modifier.fillMaxSize()) {
+                if (!isTablet) {
+                    if (selectedContact == null) {
+                        contactListUI()
+                    } else {
+                        contactDetailsUI(selectedContact!!)
+                    }
+                } else {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        Box(modifier = Modifier.weight(0.42f).fillMaxHeight()) {
+                            contactListUI()
+                        }
+                        Box(modifier = Modifier.weight(0.58f).fillMaxHeight()) {
+                            if (selectedContact != null) {
+                                contactDetailsUI(selectedContact!!)
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.03f)),
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(32.dp)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(32.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.AccountBox,
+                                                contentDescription = null,
+                                                tint = WaterBlue.copy(alpha = 0.4f),
+                                                modifier = Modifier.size(64.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                            Text(
+                                                text = "Select a Contact",
+                                                color = Color.White,
+                                                fontSize = 18.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = "Choose a contact from the list to view their details, files, and timeline.",
+                                                color = Color.Gray,
+                                                fontSize = 12.sp,
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                            )
                                         }
                                     }
                                 }

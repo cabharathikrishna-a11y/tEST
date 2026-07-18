@@ -50,6 +50,7 @@ fun LiveSphereScreen(
     var showLogDialog by remember { mutableStateOf(false) }
     val peerUiCards by viewModel.peerUiCards.collectAsStateWithLifecycle()
     val leaderboard by com.example.api.ArenaLeaderboardEngine.leaderboardFlow.collectAsStateWithLifecycle(emptyList())
+    val historyRecords by viewModel.allHistoryVault.collectAsStateWithLifecycle(emptyList())
     val currentUsername by viewModel.currentUsername.collectAsStateWithLifecycle()
     val userName by viewModel.userName.collectAsStateWithLifecycle()
     val userNickname by viewModel.userNickname.collectAsStateWithLifecycle()
@@ -76,6 +77,21 @@ fun LiveSphereScreen(
         } else {
             context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                 .getString("user_email_$currentUsername", "") ?: ""
+        }
+    }
+
+    LaunchedEffect(myEmail) {
+        if (myEmail.isNotBlank()) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.example.api.WeeklyStatsUpdater.updateWeeklyStats(context, myEmail, 0L, "")
+            }
+            com.example.api.ArenaLeaderboardEngine.startListening(context, myEmail, "TODAY")
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            com.example.api.ArenaLeaderboardEngine.stopListening()
         }
     }
 
@@ -296,9 +312,14 @@ fun LiveSphereScreen(
                 letterSpacing = 1.sp,
                 modifier = Modifier.padding(bottom = 6.dp)
             )
-            val myLeaderboardPeer = leaderboard.find { it.isMe }
-            val myXp = myLeaderboardPeer?.xpScore ?: 0
-            val myStreak = myLeaderboardPeer?.activeStreak ?: 0
+            val myStreak = remember(historyRecords, leaderboard) {
+                val myLocalStreak = com.example.api.AnalyticsVaultEngine.calculateDailyConsistencyStreak(context, historyRecords)
+                val myLeaderboardPeer = leaderboard.find { it.isMe }
+                if (myLocalStreak > 0) myLocalStreak else (myLeaderboardPeer?.activeStreak ?: 0)
+            }
+            val myXp = remember(myTodayFocusMs, myStreak) {
+                com.example.api.ArenaLeaderboardEngine.calculateXp(myTodayFocusMs, myStreak)
+            }
 
             MyStatusCard(
                 myDisplayName = myDisplayName,

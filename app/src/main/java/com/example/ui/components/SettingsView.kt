@@ -1296,14 +1296,13 @@ fun SettingsSleepWakePage(viewModel: AppViewModel) {
         }
     }
 
-    LazyColumn(
+    Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Bedtime Reminder Card
-        item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D11)),
                 border = BorderStroke(1.dp, Color(0xFF222225)),
@@ -1385,10 +1384,8 @@ fun SettingsSleepWakePage(viewModel: AppViewModel) {
                     }
                 }
             }
-        }
 
         // Morning Wake-up Alarm Card
-        item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D11)),
                 border = BorderStroke(1.dp, Color(0xFF222225)),
@@ -1470,10 +1467,8 @@ fun SettingsSleepWakePage(viewModel: AppViewModel) {
                     }
                 }
             }
-        }
 
         // Alarm Logs / Statistics Card
-        item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D11)),
                 border = BorderStroke(1.dp, Color(0xFF222225)),
@@ -1511,7 +1506,6 @@ fun SettingsSleepWakePage(viewModel: AppViewModel) {
                     }
                 }
             }
-        }
     }
 }
 
@@ -1528,14 +1522,12 @@ fun SettingsRecomposeFirebasePage(viewModel: AppViewModel) {
         }
     }
 
-    LazyColumn(
+    Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Explanatory Banner Card
-        item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E22)),
                 border = BorderStroke(1.dp, Color(0xFF33333C)),
@@ -1557,10 +1549,8 @@ fun SettingsRecomposeFirebasePage(viewModel: AppViewModel) {
                     )
                 }
             }
-        }
 
         // Action & Status Card
-        item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E22)),
                 border = BorderStroke(1.dp, Color(0xFF33333C)),
@@ -1667,10 +1657,8 @@ fun SettingsRecomposeFirebasePage(viewModel: AppViewModel) {
                     }
                 }
             }
-        }
 
         // Live Console Logs
-        item {
             Text(
                 text = "Live Execution Logs",
                 color = Color.LightGray,
@@ -1678,9 +1666,7 @@ fun SettingsRecomposeFirebasePage(viewModel: AppViewModel) {
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
             )
-        }
 
-        item {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1728,7 +1714,6 @@ fun SettingsRecomposeFirebasePage(viewModel: AppViewModel) {
                     }
                 }
             }
-        }
     }
 }
 
@@ -12275,12 +12260,14 @@ private fun bitmapToBase64(bitmap: Bitmap): String {
 
 @Composable
 fun ProfileSetupView(viewModel: AppViewModel) {
+    val context = LocalContext.current
     val currentName = viewModel.userName.collectAsState().value
     val currentNickname = viewModel.userNickname.collectAsState().value
     val currentEmoji = viewModel.userEmoji.collectAsState().value
     var name by remember(currentName) { mutableStateOf(currentName) }
     var nickname by remember(currentNickname) { mutableStateOf(currentNickname) }
     var emoji by remember(currentEmoji) { mutableStateOf(currentEmoji) }
+    var roomId by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var isCheckingCloud by remember { mutableStateOf(true) }
 
@@ -12346,6 +12333,15 @@ fun ProfileSetupView(viewModel: AppViewModel) {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedTextField(
+                value = roomId,
+                onValueChange = { roomId = it },
+                label = { Text("Study Room ID (Optional)") },
+                placeholder = { Text("ROOM_...") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
             Spacer(modifier = Modifier.height(24.dp))
             
             if (errorMsg != null) {
@@ -12372,6 +12368,10 @@ fun ProfileSetupView(viewModel: AppViewModel) {
                             return@Button
                         }
                         viewModel.completeProfileSetup(name, nickname, emoji)
+                        if (roomId.isNotBlank()) {
+                            val email = viewModel.userEmail.value
+                            com.example.api.FocusLockerManager.joinRoom(context, email, roomId.trim())
+                        }
                     },
                     modifier = Modifier.weight(1f).height(48.dp)
                 ) {

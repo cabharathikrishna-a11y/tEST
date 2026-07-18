@@ -183,7 +183,9 @@ object SmartUpdateManager {
                 // 1. Safety Lock Preconditions Check:
                 // Do not initiate update download until Room Outbox is fully empty and focus timer status is "Relaxing".
                 val db = AppDatabase.getInstance(context)
-                var outboxItems = db.outboxQueueDao().getPendingQueueDirect()
+                var outboxItems = withContext(Dispatchers.IO) {
+                    db.outboxQueueDao().getPendingQueueDirect()
+                }
                 if (!force && outboxItems.isNotEmpty()) {
                     Log.i(TAG, "Safety Lock: Outbox has ${outboxItems.size} items. Triggering active sync drain...")
                     withContext(Dispatchers.IO) {

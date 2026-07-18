@@ -6,6 +6,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -88,6 +90,9 @@ fun ArenaScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     // Sync shields and start leaderboard listeners
     LaunchedEffect(email, leaderboardPeriod) {
         if (email.isNotBlank()) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.example.api.WeeklyStatsUpdater.updateWeeklyStats(context, email, 0L, "")
+            }
             ArenaLeaderboardEngine.startListening(context, email, leaderboardPeriod)
             StreakShieldManager.fetchAndSyncShields(context, email)
         }
@@ -283,8 +288,9 @@ fun ArenaScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         }
 
         // Add me
+        val myLocalStreak = com.example.api.AnalyticsVaultEngine.calculateDailyConsistencyStreak(context, historyRecords)
         val myRankModel = leaderboard.find { it.isMe }
-        val myStreak = myRankModel?.activeStreak ?: 0
+        val myStreak = if (myLocalStreak > 0) myLocalStreak else (myRankModel?.activeStreak ?: 0)
         val myTopSub = myRankModel?.topSubject ?: "None"
         val myXp = com.example.api.ArenaLeaderboardEngine.calculateXp(myTotalMs, myStreak)
 
@@ -731,22 +737,30 @@ fun ArenaScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         }
                     }
 
-                    // Podium Section (Top 3)
+                    // Podium Section (Adaptive size matching study group size, min 4)
                     if (dynamicLeaderboard.isNotEmpty()) {
                         item {
-                            val top3 = dynamicLeaderboard.take(3)
-                            ArenaPodium(
-                                top3 = top3,
-                                viewModel = viewModel,
-                                activeShields = activeShields, 
-                                onGiftShieldClick = {
-                                    giftingPeer = it
-                                    showGiftConfirmDialog = true
-                                },
-                                onShowShieldsBottomSheet = {
-                                    showShieldsBottomSheet = true
+                            val podiumSize = if (dynamicLeaderboard.size < 4) 4 else dynamicLeaderboard.size
+                            val topN = dynamicLeaderboard.take(podiumSize)
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(modifier = Modifier.widthIn(max = if (podiumSize > 4) 650.dp else 500.dp)) {
+                                    ArenaPodium(
+                                        topN = topN,
+                                        viewModel = viewModel,
+                                        activeShields = activeShields, 
+                                        onGiftShieldClick = {
+                                            giftingPeer = it
+                                            showGiftConfirmDialog = true
+                                        },
+                                        onShowShieldsBottomSheet = {
+                                            showShieldsBottomSheet = true
+                                        }
+                                    )
                                 }
-                            )
+                            }
                             Spacer(modifier = Modifier.height(24.dp))
                         }
                     } else {
@@ -773,9 +787,10 @@ fun ArenaScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         }
                     }
 
-                    // Peer Ranking List (4th onwards)
-                    if (dynamicLeaderboard.size > 3) {
-                        val remainingPeers = dynamicLeaderboard.drop(3)
+                    // Peer Ranking List (competitors beyond podium size)
+                    val podiumSize = if (dynamicLeaderboard.size < 4) 4 else dynamicLeaderboard.size
+                    if (dynamicLeaderboard.size > podiumSize) {
+                        val remainingPeers = dynamicLeaderboard.drop(podiumSize)
                         item {
                             Text(
                                 text = "COMPETITORS",
@@ -1428,46 +1443,87 @@ fun ArenaScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     }
 }
 
+data class PodiumSpot(val rank: Int, val peer: ArenaRankModel?)
+
 @Composable
 fun ArenaPodium(
-    top3: List<ArenaRankModel>,
+    topN: List<ArenaRankModel>,
     viewModel: AppViewModel,
     activeShields: List<LocalShieldsVault>,
     onGiftShieldClick: (ArenaRankModel) -> Unit,
     onShowShieldsBottomSheet: () -> Unit
 ) {
-    val podiumOrder = remember(top3) {
-        val list = mutableListOf<ArenaRankModel?>()
-        if (top3.size > 1) list.add(top3[1]) else list.add(null) // 2nd Place
-        if (top3.isNotEmpty()) list.add(top3[0]) else list.add(null) // 1st Place
-        if (top3.size > 2) list.add(top3[2]) else list.add(null) // 3rd Place
-        list
+    val podiumOrder = remember(topN) {
+        val list = java.util.LinkedList<PodiumSpot>()
+        // We want a minimum of 4 spots, or the study group size (topN.size)
+        val maxRank = if (topN.size < 4) 4 else topN.size
+        for (rank in 1..maxRank) {
+            val peer = if (rank <= topN.size) topN[rank - 1] else null
+            val spot = PodiumSpot(rank, peer)
+            if (rank == 1) {
+                list.add(spot)
+            } else if (rank % 2 == 0) {
+                list.addFirst(spot) // 2nd, 4th, 6th... left side
+            } else {
+                list.addLast(spot) // 3rd, 5th, 7th... right side
+            }
+        }
+        list.toList()
     }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(horizontal = 16.dp)
+            .then(
+                if (podiumOrder.size > 4) {
+                    Modifier.horizontalScroll(rememberScrollState())
+                } else {
+                    Modifier
+                }
+            ),
+        horizontalArrangement = if (podiumOrder.size > 4) Arrangement.spacedBy(12.dp) else Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.Bottom
     ) {
-        podiumOrder.forEachIndexed { index, peer ->
-            val isFirst = index == 1
-            val isSecond = index == 0
-            val isThird = index == 2
+        podiumOrder.forEach { spot ->
+            val rank = spot.rank
+            val peer = spot.peer
 
-            val podiumHeight = if (isFirst) 280.dp else if (isSecond) 245.dp else 220.dp
-            val medalColor = if (isFirst) Color(0xFFFFD700) else if (isSecond) Color(0xFFBDC3C7) else Color(0xFFCD7F32)
-            val rankText = if (isFirst) "1st" else if (isSecond) "2nd" else "3rd"
+            val podiumHeight = when (rank) {
+                1 -> 280.dp
+                2 -> 245.dp
+                3 -> 210.dp
+                4 -> 180.dp
+                else -> maxOf(140, 280 - (rank - 1) * 35).dp
+            }
+            val medalColor = when (rank) {
+                1 -> Color(0xFFFFD700)
+                2 -> Color(0xFFBDC3C7)
+                3 -> Color(0xFFCD7F32)
+                4 -> Color(0xFF4DB6AC) // Teal for 4th place
+                else -> Color(0xFF78909C)
+            }
+            val rankText = when (rank) {
+                1 -> "1st"
+                2 -> "2nd"
+                3 -> "3rd"
+                else -> "${rank}th"
+            }
 
             Box(
                 modifier = Modifier
-                    .weight(1f)
+                    .then(
+                        if (podiumOrder.size > 4) {
+                            Modifier.width(85.dp)
+                        } else {
+                            Modifier.weight(1f)
+                        }
+                    )
                     .height(podiumHeight)
                     .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                     .background(
                         Brush.verticalGradient(
-                            colors = if (isFirst) {
+                            colors = if (rank == 1) {
                                 listOf(Color(0xFF2C2512), Color(0xFF14141A))
                             } else {
                                 listOf(Color(0xFF1E1E24), Color(0xFF111116))
@@ -1518,8 +1574,8 @@ fun ArenaPodium(
                             }
                             peer.customEmoji
                         }
-                        val avatarSize = if (isFirst) 46.dp else if (isSecond) 40.dp else 36.dp
-                        val avatarFontSize = if (isFirst) 14.sp else if (isSecond) 12.sp else 11.sp
+                        val avatarSize = if (rank == 1) 46.dp else if (rank == 2) 40.dp else 36.dp
+                        val avatarFontSize = if (rank == 1) 14.sp else if (rank == 2) 12.sp else 11.sp
                         UserAvatar(
                             emojiOrBase64 = resolvedEmoji,
                             size = avatarSize,
@@ -1535,7 +1591,7 @@ fun ArenaPodium(
                         ) {
                             Text(
                                 text = peer.displayName,
-                                fontSize = if (isFirst) 13.sp else 11.sp,
+                                fontSize = if (rank == 1) 13.sp else 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (peer.isMe) Color(0xFF00C853) else Color.White,
                                 maxLines = 1,
@@ -1545,7 +1601,7 @@ fun ArenaPodium(
 
                             Text(
                                 text = formatFocusMsToHours(peer.totalFocusMs),
-                                fontSize = if (isFirst) 11.sp else 10.sp,
+                                fontSize = if (rank == 1) 11.sp else 10.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = Color.LightGray
                             )
@@ -1554,7 +1610,7 @@ fun ArenaPodium(
 
                             Text(
                                 text = "${peer.xpScore} XP",
-                                fontSize = if (isFirst) 11.sp else 10.sp,
+                                fontSize = if (rank == 1) 11.sp else 10.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFFFFB300)
                             )
